@@ -1,0 +1,19 @@
+pandas
+pygbif
+folium
+pyproj
+mgrs
+shapely
+geopandas
+contextily
+scipy
+rasterio
+rasterstats
+appdirs
+OSMPythonTools
+# SDM packages
+scikit-learn
+pyimpute
+# Create gif
+imageio
+pygifsicle
