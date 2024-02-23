@@ -3,6 +3,7 @@ import tempfile
 import itertools as it
 from pyproj import Transformer
 from shapely.geometry import Point, Polygon, box
+import pandas as pd
 import geopandas as gpd
 import numpy as np
 import folium
@@ -90,21 +91,39 @@ class Grid:
         self.grid[colname] = merged.index_right.value_counts()
         self.grid = self.grid.fillna(0)
 
+    def remove_empty_grid_cells(self, columns):
+        """
+        Based on sum of columns remove empty cells
+
+        Args:
+          columns (str|list): Can be a single column name or list
+            of columns names
+        """
+        if isinstance(columns, str):
+            columns = [columns]
+        non_empty_cells = self.grid[columns].sum(axis=1) > 0
+        logging.info(
+            'Filtered %s empty cells from %s total',
+            (~non_empty_cells).sum(), len(non_empty_cells)
+        )
+        self.grid = self.grid[non_empty_cells].copy()
+        
     def plot(self, colname='count', crs=None, zoom='auto',
-             filename=None, colorbar=True, vmax=None,
+             filename=None, edgecolor='k', color=(1,0,0),
+             colorbar=True, vmax=None,
              logcol=False, ax=None, bax=True):
         import matplotlib.colors as mcolors
         import numpy as np
         import contextily as cx
         #https://kbkb-wx-python.blogspot.com/2015/12/python-transparent-colormap.html
         colors = [
-            (1,0,0,c) for c in np.linspace(0,1,100)
+            color+(c,) for c in np.linspace(0,1,100)
         ]
         cmap = mcolors.LinearSegmentedColormap.from_list(
             'custom_cmap', colors, N=10
         )
         ax = (self.grid.to_crs(crs) if crs else self.grid).plot(
-            column=colname, figsize=(10,10), edgecolor='k',
+            column=colname, figsize=(10,10), edgecolor=edgecolor,
             vmin=0,vmax=vmax,cmap=cmap,
             #https://matplotlib.org/stable/users/explain/colors/colormapnorms.html
             norm=(mcolors.SymLogNorm(vmin=0, vmax=vmax, linthresh=5) if logcol else None),
@@ -119,48 +138,152 @@ class Grid:
                         time_column='eventDate',
                         time_resolution='year',
                         crs=None, figsize=(10,10),
+                        fillcolors=((1,0,0),(0,0,1),(0,1,0)),
+                        logcol=False, gridcolor='k',
                         duration=500):
         import dateutil.parser
         from dateutil.parser import ParserError
         from operator import attrgetter
         import matplotlib.pyplot as plt
         import imageio.v3 as iio
+
+        if not isinstance(data, list):
+            cubes = [data]
+        else: cubes = data
         
         def trydate(timestr):
             try: return dateutil.parser.parse(timestr)
             except ParserError: return None
-        time_column = data[time_column].apply(trydate)
-        if nasum := (nans := time_column.isna()).sum():
-            logging.warning('Filtering %s non-parseable dates', nasum)
-            data = data[~nans]
-            time_column = time_column.dropna()
-        time_grouping = time_column.apply(attrgetter('year'))
-        with tempfile.TemporaryDirectory(prefix=os.path.dirname(filename)+'/tl') as tmpdir:
-            max_grid_cells = {}
-            for grpname, grp in data.groupby(time_grouping):
-                self.assign_to_grid(grp, colname=f"counts_{grpname}")
-                max_grid_cells[grpname] = self.grid[f"counts_{grpname}"].max()
-            vmax = max(max_grid_cells.values())
-            min_t, max_t = min(max_grid_cells), max(max_grid_cells)
-            for grpname in max_grid_cells:
-                fig, axes = plt.subplots(nrows=2,ncols=1, height_ratios=[12, 1], figsize=figsize)
-                self.plot(
-                    crs=crs,
-                    colorbar=True,colname=f"counts_{grpname}",
-                    vmax=vmax, ax=axes[0]
-                )
-                make_timeline(axes[1], grpname, min_t, max_t)
-                fig.savefig(f"{tmpdir}/{grpname}.png")
+
+        time_column_name = time_column
+        frame_figs = {}
+        with tempfile.TemporaryDirectory(
+                prefix=os.path.dirname(filename)+'/tl') as tmpdir:
+            for i,data in enumerate(cubes):
+                time_column = data[time_column_name].apply(trydate)
+                if nasum := (nans := time_column.isna()).sum():
+                    logging.warning('Filtering %s non-parseable dates', nasum)
+                    data = data[~nans]
+                    time_column = time_column.dropna()
+                time_grouping = time_column.apply(attrgetter(time_resolution))
+                max_grid_cells = {}
+                for grpname, grp in data.groupby(time_grouping):
+                    self.assign_to_grid(grp, colname=f"counts_{grpname}")
+                    max_grid_cells[grpname] = self.grid[f"counts_{grpname}"].max()
+                vmax = max(max_grid_cells.values())
+                min_t, max_t = min(max_grid_cells), max(max_grid_cells)
+                for grpname in max_grid_cells:
+                    if not i: # only for first cube
+                        fig, axes = plt.subplots(
+                            nrows=2,ncols=1,
+                            height_ratios=[12, 1],
+                            figsize=figsize
+                        )
+                        make_timeline(axes[1], grpname, min_t, max_t)
+                        frame_figs[grpname] = (fig, axes)
+                    else: fig, axes = frame_figs[grpname]
+                    self.plot(
+                        crs=crs, edgecolor=gridcolor,
+                        colorbar=True, color=fillcolors[i],
+                        logcol=logcol,
+                        colname=f"counts_{grpname}",
+                        vmax=vmax, ax=axes[0]
+                    )
+                    if i == (len(cubes)-1):
+                        fig.savefig(f"{tmpdir}/{grpname}.png")
+            
             images = list()
             for grpname in max_grid_cells:
                 images.append(
                     iio.imread(f"{tmpdir}/{grpname}.png")
                 )
             frames = np.stack(images, axis=0)
-            iio.imwrite(filename, frames, duration=duration)
+            iio.imwrite(filename, frames, duration=duration, loop=4)
             #from pygifsicle import optimize
             #optimize(filename)
 
+    def interactions(self, cube1, cube2=None,
+                     taxColumn='species', minimumAbundance=1):
+        """Measure interactions base on co-occurrence
+        and relate to known interactions
+
+        Args:
+          cube1 (OcCube): Occurrence cube for analysis
+          cube2 (None|OcCube): If provided, interactions between
+            cubes are analysed. Otherwise within cube interactions
+            are considered.
+          taxColumn (str): Column name that provides the taxa names for both cubes.
+          minimumAbundance (int): Minimum abundances for the taxa, set to 1 to include all.
+        
+        """
+        cube1_taxa = cube1.cube[taxColumn].value_counts()
+        if (poorTaxa:=
+            (taxaSelection:=
+             (cube1_taxa < minimumAbundance)).sum()):
+            logging.info(
+                'Filtering %s from %s %s in cube1',
+                poorTaxa, len(taxaSelection), taxColumn
+            )
+            cube1_taxa = cube1_taxa[~taxaSelection]
+        for t in cube1_taxa.index:
+            self.assign_to_grid(
+                cube1.cube[cube1.cube[taxColumn]==t],
+                colname=t # could include cube1 specifier
+            )
+        if cube2 is None:
+            infra_cube_analysis = True
+            cube2_taxa = cube1_taxa
+        else:
+            infra_cube_analysis = False
+            cube2_taxa = cube2.cube[taxColumn].value_counts()
+            if (poorTaxa:=
+                (taxaSelection:=
+                 (cube2_taxa < minimumAbundance)).sum()):
+                logging.info(
+                    'Filtering %s from %s %s in cube2',
+                    poorTaxa, len(taxaSelection), taxColumn
+                )
+                cube2_taxa = cube2_taxa[~taxaSelection]
+            if cube2_taxa.index.isin(
+                    cube1_taxa.index).sum():
+                raise ValueError('Shared taxa in cube1 and cube2')
+            for t in cube2_taxa.index:
+                self.assign_to_grid(
+                    cube2.cube[cube2.cube[taxColumn]==t],
+                    colname=t # could include cube1 specifier
+            )
+        # Calculate co-occurrence statistic
+        from scipy.stats import chi2_contingency
+        con_p = {}
+        con_c = {}
+        contingencies = {}
+        for t1 in cube1_taxa.index:
+            con_p[t1] = {}
+            con_c[t1] = {}
+            contingencies[t1] = {}
+            for t2 in cube2_taxa.index:
+                contingency = pd.crosstab(
+                    self.grid[t1]>0,
+                    self.grid[t2]>0
+                )
+                c, p, dof, expected = chi2_contingency(contingency)
+                con_p[t1][t2] = p
+                con_c[t1][t2] = c
+                contingencies[t1][t2] = contingency
+        con_p = pd.DataFrame(con_p)
+        con_c = pd.DataFrame(con_c)
+        print(con_p.stack().sort_values().head())
+        return con_p
+
+class GridScan:
+    def __init__(self, cube1, cube2=None, bounds=None):
+        self.cube1 = cube1
+        self.cube2 = cube2
+        self.bounds = bounds or cube1.cube.total_bounds
+
+    def scan(self, start_size, iterations=4):
+        pass
+    
 def make_timeline(ax, time, min_t, max_t, tick_interval=5, fontsize=12):
     # https://github.com/souravbhadra/maplapse/blob/main/maplapse/maplapse.py
     ax.axhline(y=0.5, color='darkgray', linestyle='-', zorder=1)

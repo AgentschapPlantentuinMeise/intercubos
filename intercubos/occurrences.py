@@ -140,7 +140,10 @@ def get_occurrences(
             )
             zcsvf = zf.open(download_key+'.csv')
             data = pd.concat(
-                [data, pd.read_csv(zcsvf, sep='\t')], ignore_index=True
+                [
+                    data,
+                    pd.read_csv(zcsvf, sep='\t', on_bad_lines='warn')
+                ], ignore_index=True
             )
         
     else: data = pd.DataFrame(data)

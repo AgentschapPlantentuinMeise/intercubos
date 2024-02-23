@@ -281,6 +281,31 @@ https://biogeo.ucdavis.edu/data/worldclim/v2.1/base/wc2.1_30s_bio.zip
     df=df[df.bioclim_1>0] # filtering masked, not ideal though
     stats.pearsonr(df.bioclim_1, df.insect_count)
 
+## Implemented in the package `intercubos`
+
+    from intercubos.occurrences import OcCube
+    from intercubos.gridit import Grid
+    mg_insects = OcCube(
+        'insects', 'MG', rank='class',
+        years=range(2000,2024), clip2region=True,
+	verbose=True
+    )
+    mg_plants = OcCube(
+        'Plantae', 'MG', rank='kingdom',
+        years=range(2000,2024), clip2region=True,
+	verbose=True
+    )
+    (sw_lon, sw_lat, ne_lon, ne_lat) = mg_plants.cube.total_bounds
+    grid = Grid(sw_lon, sw_lat, ne_lon, ne_lat, stepsize=5000)
+    grid.assign_to_grid(mg_plants.cube, colname='total_plants')
+    grid.assign_to_grid(mg_insects.cube, colname='total_insects')
+    ax = grid.plot(
+        crs='EPSG:3857', edgecolor=None,
+        filename='/code/results/mg_plants_insects.png',
+        colorbar=True, colname='total_plants'
+    )
+    
+
 ## Peru tree data retrieval
 
 Inspiration https://data-blog.gbif.org/post/downloading-long-species-lists-on-gbif/
