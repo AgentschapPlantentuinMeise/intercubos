@@ -15,9 +15,9 @@ config_file = os.path.join(
 config = configparser.ConfigParser()
 config['occurrences.gbif'] = {}
 config['occurrences.gbif']['limit'] = '300'
-config['occurrences.gbif']['user'] = os.environ.get('GBIF_USER')
-config['occurrences.gbif']['pwd'] = os.environ.get('GBIF_PWD')
-config['occurrences.gbif']['email'] = os.environ.get('GBIF_EMAIL')
+config['occurrences.gbif']['user'] = os.environ.get('GBIF_USER','')
+config['occurrences.gbif']['pwd'] = os.environ.get('GBIF_PWD','')
+config['occurrences.gbif']['email'] = os.environ.get('GBIF_EMAIL','')
 
 if os.path.exists(config_file):
     config.read(config_file)

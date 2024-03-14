@@ -295,16 +295,46 @@ https://biogeo.ucdavis.edu/data/worldclim/v2.1/base/wc2.1_30s_bio.zip
         years=range(2000,2024), clip2region=True,
 	verbose=True
     )
-    (sw_lon, sw_lat, ne_lon, ne_lat) = mg_plants.cube.total_bounds
-    grid = Grid(sw_lon, sw_lat, ne_lon, ne_lat, stepsize=5000)
+    #(sw_lon, sw_lat, ne_lon, ne_lat) = mg_plants.bounds
+    #grid = Grid(sw_lon, sw_lat, ne_lon, ne_lat, stepsize=5000)
+    grid = Grid(*mg_plants.bounds, stepsize=5000)
     grid.assign_to_grid(mg_plants.cube, colname='total_plants')
     grid.assign_to_grid(mg_insects.cube, colname='total_insects')
-    ax = grid.plot(
-        crs='EPSG:3857', edgecolor=None,
-        filename='/code/results/mg_plants_insects.png',
-        colorbar=True, colname='total_plants'
+    #ax = grid.plot(
+    #    crs='EPSG:3857', edgecolor=None, vmax=10000, logcol=True,
+    #    colorbar=True, colname='total_plants'
+    #)
+    #ax = grid.plot(
+    #    crs='EPSG:3857', edgecolor=None, vmax=10000,
+    #    color=(0,0,1), logcol=True,
+    #    filename='/code/results/mg_plants_insects.png',
+    #    colorbar=True, colname='total_insects', ax=ax
+    #)
+    ax = grid.plot_interaction('total_plants','total_insects',
+        crs='EPSG:3857', edgecolor=None, vmax=10000,
+        logcol=True, colorbar=True,
+        filename='/code/results/mg_plants_insects.png'
     )
     
+## Finding optimal grid cell size for interactions
+
+    from intercubos.occurrences import OcCube
+    from intercubos.gridit import GridScan
+    mg_plants = OcCube(
+        'Plantae', 'MG', rank='kingdom',
+	filename='/code/data/mg_plants.pck'
+        years=range(2000,2024), verbose=True
+    )
+    mg_insects = OcCube(
+        'insects', 'MG', rank='class',
+	filename='/code/data/mg_insects.pck'
+        years=range(2000,2024), verbose=True
+    )
+    gs = GridScan(mg_plants,mg_insects)
+    size_experiments = gs.scan(100000, minimumAbundance=500)
+    for size in sorted(size_experiments):
+        print(size,(size_experiments[size] < .05).sum(axis=1).sum())  
+        print((size_experiments[size] < .05).sum(axis=0).sum())
 
 ## Peru tree data retrieval
 

@@ -1,5 +1,6 @@
 import os
 import time
+import pickle
 import datetime
 import logging
 import zipfile
@@ -17,10 +18,18 @@ gbif_config = config['occurrences.gbif']
 class OcCube:
     def __init__(
             self, taxonName, regionName, years, rank='species',
-            clip2region=False, verbose=False):
-        self.cube = get_occurrences(
-            taxonName, regionName, rank=rank, years=years, verbose=verbose
-        )
+            clip2region=False, filename=None, verbose=False):
+        if filename and os.path.exists(filename):
+            with open(filename,'rb') as f:
+                self.cube = pickle.load(f)
+        else:
+            self.cube = get_occurrences(
+                taxonName, regionName, rank=rank, years=years, verbose=verbose
+            )
+            if filename:
+                with open(filename,'wb') as f:
+                    pickle.dump(self.cube,f)
+        # Clipping after optionally saved file
         if clip2region:
             self.set_region_polygon(regionName)
             self.clip_region()
@@ -55,6 +64,10 @@ class OcCube:
         logging.info('Cube size before clipping: %s', len(self.cube))
         self.cube = self.cube.clip(self.regionPolygon)
         logging.info('Cube size after clipping: %s', len(self.cube))
+
+    @property
+    def bounds(self):
+        return self.cube.total_bounds
         
 def get_occurrences(
     taxonName, regionName, regionPolygon=None,
