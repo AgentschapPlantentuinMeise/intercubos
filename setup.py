@@ -22,6 +22,25 @@ setup(name='intercubos',
           "Development Status :: 1 - Planning"
       ],
       install_requires=[
+          "pandas",
+          "pygbif",
+          "folium",
+          "pyproj",
+          "mgrs",
+          "shapely",
+          "geopandas",
+          "contextily",
+          "scipy",
+          "rasterio",
+          "rasterstats",
+          "appdirs",
+          "OSMPythonTools",
+          # SDM packages
+          "scikit-learn",
+          "pyimpute",
+    	  # Create gif
+          "imageio",
+          "pygifsicle"
       ],
       extras_require={
           'documentation': ['Sphinx']
